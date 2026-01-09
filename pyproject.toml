@@ -1,0 +1,39 @@
+[project]
+name = "hearts"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "numpy>=2.4.0",
+    "pycarddeck>=1.4.0",
+    "pygame-ce>=2.5.6",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+    "torch>=2.9.1",
+]
+
+[tool.pytest.ini_options]
+addopts = "--cov=hearts_ai --cov=hearts_game --cov=hearts_learn --cov-report=term-missing"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["."]
+omit = [
+    "tests/*",
+    "hearts_gui.py",
+    "main.py",
+    "verify_heuristics.py",
+    "test_weights.py",
+    "learned_weights.py",
+    "**/__init__.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
