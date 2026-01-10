@@ -252,7 +252,7 @@ class HeartsGUI:
         # Buttons
         self.pass_button = Button(
             WINDOW_WIDTH // 2 - 60,
-            WINDOW_HEIGHT - 150,
+            WINDOW_HEIGHT // 2 + 20,
             120,
             40,
             "Pass Cards",
@@ -313,15 +313,15 @@ class HeartsGUI:
         if self.num_players == 4:
             positions = {
                 0: (WINDOW_WIDTH // 2, WINDOW_HEIGHT - 60, "bottom"),
-                1: (80, WINDOW_HEIGHT // 2, "left"),
+                1: (80, WINDOW_HEIGHT // 2 + 15, "left"),
                 2: (WINDOW_WIDTH // 2, 80, "top"),
-                3: (WINDOW_WIDTH - 80, WINDOW_HEIGHT // 2, "right"),
+                3: (WINDOW_WIDTH - 80, WINDOW_HEIGHT // 2 + 15, "right"),
             }
         else:
             positions = {
                 0: (WINDOW_WIDTH // 2, WINDOW_HEIGHT - 60, "bottom"),
-                1: (150, WINDOW_HEIGHT // 2 - 50, "left"),
-                2: (WINDOW_WIDTH - 150, WINDOW_HEIGHT // 2 - 50, "right"),
+                1: (150, WINDOW_HEIGHT // 2 - 10, "left"),
+                2: (WINDOW_WIDTH - 150, WINDOW_HEIGHT // 2 - 10, "right"),
             }
         return positions[player_index]
 
@@ -430,7 +430,7 @@ class HeartsGUI:
 
         total_width = (len(hand) - 1) * CARD_SPACING + CARD_WIDTH
         start_x = (WINDOW_WIDTH - total_width) // 2
-        y = WINDOW_HEIGHT - 140
+        y = WINDOW_HEIGHT - 130
 
         valid_plays = []
         if self.game.phase == GamePhase.PLAYING:
@@ -569,7 +569,9 @@ class HeartsGUI:
         else:
             text = f"Select 3 cards to pass {direction}"
         text_surf = self.label_font.render(text, True, WHITE)
-        text_rect = text_surf.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 180))
+        text_rect = text_surf.get_rect(
+            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 40)
+        )
         self.screen.blit(text_surf, text_rect)
 
         # Pass button (only in manual mode)

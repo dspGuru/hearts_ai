@@ -12,6 +12,7 @@ from dataclasses import dataclass, fields
 from typing import Optional
 import random
 import time
+import json
 
 from hearts_game import (
     Card,
@@ -43,6 +44,10 @@ class LearnableWeights(nn.Module):
         "pass_high_cards": (20.0, 80.0, False),
         "high_card_threshold": (10, 14, True),
         "pass_base_priority": (-10.0, 10.0, False),
+        "pass_two_of_clubs_control": (0.0, 30.0, False),
+        "retain_ace_of_clubs_bonus": (0.0, 30.0, False),
+        "pass_decoy_bonus": (0.0, 20.0, False),
+        "pass_last_card_penalty": (0.0, 30.0, False),
         "lead_clubs_priority": (20.0, 60.0, False),
         "lead_diamonds_priority": (15.0, 50.0, False),
         "lead_spades_priority": (5.0, 40.0, False),
@@ -58,6 +63,10 @@ class LearnableWeights(nn.Module):
         "take_safe_trick_preference": (0.5, 2.0, False),
         "moon_threat_threshold": (5, 15, True),
         "moon_block_priority": (20.0, 80.0, False),
+        "finesse_opportunity_weight": (0.0, 30.0, False),
+        "bleed_spades_priority": (0.0, 60.0, False),
+        "moon_dump_low_points_weight": (0.0, 30.0, False),
+        "opponent_high_card_risk_weight": (0.0, 40.0, False),
     }
 
     def __init__(self, initial_weights: AIWeights):
@@ -545,39 +554,37 @@ def main():
         all_best_weights[mode] = best_weights
 
     if args.save:
-        # Save weights to Python file using the new multi-mode dictionary format
-        with open(args.save, "w") as f:
-            f.write("# Learned Hearts AI weights\n")
-            f.write("from hearts_ai import AIWeights\n")
-            f.write("from hearts_game import GameMode\n\n")
-
-            # Helper to write one AIWeights instance
-            def write_weights(w: AIWeights, indent: str):
-                f.write(f"{indent}AIWeights(\n")
+        # Save weights to JSON file
+        save_data = {}
+        # Ensure all modes are in the dict, even if not trained
+        all_possible_modes = [
+            GameMode.PLAYER_4,
+            GameMode.PLAYER_3_REMOVE,
+            GameMode.PLAYER_3_KITTY,
+        ]
+        for mode in all_possible_modes:
+            if mode in all_best_weights:
+                # Convert AIWeights to dict
+                w = all_best_weights[mode]
+                weights_dict = {}
                 for name in LearnableWeights.WEIGHT_CONFIG:
                     value = getattr(w, name)
                     _, _, is_int = LearnableWeights.WEIGHT_CONFIG[name]
-                    if is_int:
-                        f.write(f"{indent}    {name}={int(value)},\n")
-                    else:
-                        f.write(f"{indent}    {name}={value:.2f},\n")
-                f.write(f"{indent}),\n")
+                    weights_dict[name] = int(value) if is_int else round(value, 2)
+                save_data[mode.name] = weights_dict
+            else:
+                # Use default weights if not trained this time
+                # Load existing weights.json if it exists to preserve untrained modes
+                current_weights = DEFAULT_WEIGHTS.get(mode, AIWeights())
+                weights_dict = {}
+                for name in LearnableWeights.WEIGHT_CONFIG:
+                    value = getattr(current_weights, name)
+                    _, _, is_int = LearnableWeights.WEIGHT_CONFIG[name]
+                    weights_dict[name] = int(value) if is_int else round(value, 2)
+                save_data[mode.name] = weights_dict
 
-            f.write("LEARNED_WEIGHTS = {\n")
-            # We want to ensure all modes are in the dict, even if not trained
-            all_possible_modes = [
-                GameMode.PLAYER_4,
-                GameMode.PLAYER_3_REMOVE,
-                GameMode.PLAYER_3_KITTY,
-            ]
-            for m in all_possible_modes:
-                f.write(f"    GameMode.{m.name}: ")
-                if m in all_best_weights:
-                    write_weights(all_best_weights[m], "    ")
-                else:
-                    # Use default weights if not trained this time
-                    f.write("AIWeights(),\n")
-            f.write("}\n")
+        with open(args.save, "w") as f:
+            json.dump(save_data, f, indent=2)
         print(f"\nWeights saved to {args.save}")
 
 

@@ -5,7 +5,9 @@ Implements strategic heuristics for passing and playing.
 Each heuristic has configurable weights that can be adjusted.
 """
 
-from dataclasses import dataclass, field
+import json
+from pathlib import Path
+from dataclasses import dataclass, field, fields
 from hearts_game import Card, Suit, Rank, Player, HeartsGame, Trick, GameMode
 
 
@@ -60,6 +62,18 @@ class AIWeights:
     # Penalty for leading suits where you passed high cards
     avoid_passed_suit_penalty: float = 20.0
 
+    # Pass the 2 of clubs to control the lead (or keep it if A is held)
+    pass_two_of_clubs_control: float = 10.0
+
+    # Bonus for retaining Ace of Clubs if we have 2 of Clubs
+    retain_ace_of_clubs_bonus: float = 15.0
+
+    # Bonus for "decoy" passes (mixing high and low cards)
+    pass_decoy_bonus: float = 5.0
+
+    # Penalty for passing the last card of a suit (signals void)
+    pass_last_card_penalty: float = 15.0
+
     """
     PLAYING WEIGHTS (used during card play decisions):
     """
@@ -110,6 +124,18 @@ class AIWeights:
 
     # Priority to pass A/K spades when dangerous
     pass_dangerous_ak_spades: float = 75.0
+
+    # Weight for finesse opportunities (playing mid-rank to draw high)
+    finesse_opportunity_weight: float = 12.0
+
+    # Priority boost for actively leading Spades when Q is protected
+    bleed_spades_priority: float = 30.0
+
+    # Weight for dumping low hearts once moon control is established
+    moon_dump_low_points_weight: float = 10.0
+
+    # Risk weight for opponents holding high cards
+    opponent_high_card_risk_weight: float = 15.0
 
     """
     SHOOT THE MOON OFFENSE:
@@ -208,12 +234,41 @@ class AIWeights:
     take_safe_trick_preference: float = 1.0
 
 
-# Default weights instance (now mode-specific)
-DEFAULT_WEIGHTS = {
-    GameMode.PLAYER_4: AIWeights(),
-    GameMode.PLAYER_3_REMOVE: AIWeights(),
-    GameMode.PLAYER_3_KITTY: AIWeights(),
-}
+def load_weights(filename: str = "weights.json") -> dict[GameMode, AIWeights]:
+    """Load weights from a JSON file."""
+    weights = {
+        GameMode.PLAYER_4: AIWeights(),
+        GameMode.PLAYER_3_REMOVE: AIWeights(),
+        GameMode.PLAYER_3_KITTY: AIWeights(),
+    }
+
+    path = Path(filename)
+    if not path.exists():
+        return weights
+
+    try:
+        with open(path, "r") as f:
+            data = json.load(f)
+
+        for mode_name, mode_weights in data.items():
+            try:
+                mode = GameMode[mode_name]
+                # Filter weights to only include valid fields in AIWeights
+                valid_fields = {f.name for f in fields(AIWeights)}
+                filtered_weights = {
+                    k: v for k, v in mode_weights.items() if k in valid_fields
+                }
+                weights[mode] = AIWeights(**filtered_weights)
+            except (KeyError, ValueError):
+                continue
+    except Exception as e:
+        print(f"Warning: Failed to load weights from {filename}: {e}")
+
+    return weights
+
+
+# Default weights instance (now mode-specific, loaded from JSON if available)
+DEFAULT_WEIGHTS = load_weights()
 
 # Global current weights (for all players in the current game)
 _ai_weights = DEFAULT_WEIGHTS[GameMode.PLAYER_4]
@@ -226,11 +281,23 @@ class CardTracker:
 
     played_cards: set[Card] = field(default_factory=set)
     void_players: dict[int, set[Suit]] = field(default_factory=dict)
+    passed_cards: dict[int, list[Card]] = field(
+        default_factory=dict
+    )  # player_index -> cards passed TO them
+    history: list[list[tuple[int, Card]]] = field(
+        default_factory=list
+    )  # list of tricks
 
     def reset(self):
         """Reset for a new round."""
         self.played_cards.clear()
         self.void_players.clear()
+        self.passed_cards.clear()
+        self.history.clear()
+
+    def record_passed_cards(self, destination_player: int, cards: list[Card]):
+        """Record cards passed to a specific player."""
+        self.passed_cards[destination_player] = list(cards)
 
     def record_cards(self, cards: list[Card]):
         """Record cards that have been played."""
@@ -269,6 +336,48 @@ class CardTracker:
         if player_index not in self.void_players:
             self.void_players[player_index] = set()
         self.void_players[player_index].add(suit)
+
+    def get_high_card_probabilities(
+        self, suit: Suit, num_players: int
+    ) -> dict[int, float]:
+        """
+        Estimate probability of each player holding high cards in a suit.
+        Returns player_index -> probability.
+        """
+        probs = {i: 0.0 for i in range(num_players)}
+        remaining = self.remaining_in_suit(suit)
+        if not remaining:
+            return probs
+
+        high_ranks = [Rank.ACE, Rank.KING, Rank.QUEEN, Rank.JACK]
+        high_remaining = [c for c in remaining if c.rank in high_ranks]
+
+        if not high_remaining:
+            return probs
+
+        # Simple heuristic: players who haven't shown void have equal chance
+        active_players = [
+            i for i in range(num_players) if not self.is_player_void(i, suit)
+        ]
+        if not active_players:
+            return probs
+
+        base_prob = 1.0 / len(active_players)
+        for i in active_players:
+            probs[i] = base_prob
+
+        # Adjust based on passed cards if we know them
+        for player_idx, cards in self.passed_cards.items():
+            for card in cards:
+                if (
+                    card.suit == suit
+                    and card.rank in high_ranks
+                    and not self.is_played(card)
+                ):
+                    probs[player_idx] += 0.5  # Boost if we passed it to them
+                    # Normalize later if needed
+
+        return probs
 
 
 class HeartsAI:
@@ -426,15 +535,57 @@ class HeartsAI:
                             priority += w.pass_dangerous_ak_spades
                         candidates.append((card, priority))
 
-        # 5. Fill remaining with highest cards
+        # 5. Strategic 2 of Clubs and Ace of Clubs control
+        two_of_clubs = Card(Suit.CLUBS, Rank.TWO)
+        ace_of_clubs = Card(Suit.CLUBS, Rank.ACE)
+
+        if two_of_clubs in hand_set:
+            # Sometimes pass 2 of clubs to control who starts
+            priority = w.pass_two_of_clubs_control
+            if ace_of_clubs in hand_set:
+                # If we have Ace, keeping 2 is better (retain Ace bonus)
+                priority -= w.retain_ace_of_clubs_bonus
+            candidates.append((two_of_clubs, priority))
+
+        # 6. Decoy passes (mix high and low)
+        # If we already have 2 high cards, consider a low card as a decoy
+        high_candidates = [c for c, p in candidates if p > 50]
+        if len(high_candidates) >= 2:
+            low_cards = sorted(hand, key=lambda c: c.rank.value)
+            if low_cards:
+                candidates.append((low_cards[0], w.pass_decoy_bonus))
+
+        # 7. Penalty for passing the last card of a suit (signals void)
+        for card, priority in candidates:
+            suit_cards = suits_count[card.suit]
+            if len(suit_cards) == 1:
+                # This is the last card of this suit in our hand
+                # Update priority in candidates list
+                for i, (c, p) in enumerate(candidates):
+                    if c == card:
+                        candidates[i] = (c, p - w.pass_last_card_penalty)
+                        break
+
+        # 8. Fill remaining with highest cards
         all_cards_by_rank = sorted(hand, key=lambda c: c.rank.value, reverse=True)
         for card in all_cards_by_rank:
             if card not in [c for c, _ in candidates]:
                 candidates.append((card, w.pass_base_priority + card.rank.value))
 
-        # Sort by priority and take top 3
+        # Sort by priority and take top 3 unique cards
         candidates.sort(key=lambda x: x[1], reverse=True)
-        return [card for card, _ in candidates[:3]]
+        chosen = []
+        seen = set()
+        for card, _ in candidates:
+            if card not in seen and len(chosen) < 3:
+                chosen.append(card)
+                seen.add(card)
+
+        # Record what we passed (Internal tracking)
+        # We don't know the exact absolute index of the destination yet,
+        # but we can store it by direction for later resolution if needed.
+        # For now, just return the cards.
+        return chosen
 
     # =========================================================================
     # PLAYING STRATEGY
@@ -597,10 +748,14 @@ class HeartsAI:
             # Prefer low cards (subtract rank * preference multiplier)
             score -= card.rank.value * w.lead_low_card_preference
 
-            # 1. Queen flushing strategy
+            # 1. Queen flushing strategy & Bleeding Spades
             if not queen_gone and card.suit == Suit.SPADES:
-                if card.rank.value <= w.flush_queen_max_rank:
-                    spades_in_hand = by_suit[Suit.SPADES]
+                spades_in_hand = by_suit[Suit.SPADES]
+                if self.QUEEN_OF_SPADES in hand:
+                    # Bleeding Spades: If we have Q and protection, force others to play spades
+                    if len(spades_in_hand) >= w.queen_protection_threshold:
+                        score += w.bleed_spades_priority
+                elif card.rank.value <= w.flush_queen_max_rank:
                     if len(spades_in_hand) >= w.flush_queen_min_spades:
                         score += w.flush_queen_priority
 
@@ -647,7 +802,9 @@ class HeartsAI:
 
         if not following_suit:
             # We can't follow suit - opportunity to dump!
-            return self._select_discard(valid_plays, moon_threat, is_shooting_moon)
+            return self._select_discard(
+                hand, valid_plays, moon_threat, is_shooting_moon
+            )
 
         # Following suit - analyze the trick
         lead_suit_cards_in_trick = [c for c in trick_cards if c.suit == lead_suit]
@@ -660,6 +817,32 @@ class HeartsAI:
         ducking_plays = [
             c for c in valid_plays if c.rank.value < highest_in_trick.rank.value
         ]
+
+        # Finesse logic: playing mid-rank to draw high cards from others
+        # (This is most useful when we are NOT last and someone after us might have a point card)
+        if not is_last and ducking_plays:
+            # If we don't have the highest card overall in this suit (tracked),
+            # consider a high-duck as a finesse.
+            remaining_higher = [
+                c
+                for c in self.tracker.remaining_in_suit(lead_suit)
+                if c.rank.value
+                > max(valid_plays, key=lambda x: x.rank.value).rank.value
+            ]
+            if remaining_higher:
+                # We can't win anyway if they play high, so try to draw it out with a mid-rank duck
+                # This is already somewhat covered by high_duck_preference, but let's boost it.
+                finesse_candidates = [
+                    c
+                    for c in ducking_plays
+                    if Rank.NINE.value <= c.rank.value <= Rank.JACK.value
+                ]
+                if finesse_candidates:
+                    # Use highest finesse card (which is a duck)
+                    return max(
+                        finesse_candidates,
+                        key=lambda c: c.rank.value * w.high_duck_preference,
+                    )
 
         trick_has_points = any(c.points > 0 for c in trick_cards)
 
@@ -725,6 +908,7 @@ class HeartsAI:
 
     def _select_discard(
         self,
+        hand: list[Card],
         valid_plays: list[Card],
         moon_threat: int | None,
         is_shooting_moon: bool = False,
@@ -742,6 +926,15 @@ class HeartsAI:
             safe_discards = [c for c in valid_plays if c.points == 0]
             if safe_discards:
                 # Discard highest non-point card that isn't a likely winner
+                # But wait: if we HAVE control (lots of high cards), dump low hearts
+                # to ensure we win the POINTY tricks later.
+                if self._has_suit_control(hand, Suit.HEARTS):
+                    low_hearts = sorted(
+                        [c for c in valid_plays if c.suit == Suit.HEARTS],
+                        key=lambda c: c.rank.value,
+                    )
+                    if low_hearts:
+                        return low_hearts[0]
                 return max(safe_discards, key=lambda c: c.rank.value)
 
         # If blocking a moon shooter, keep points (discard non-point cards)
@@ -789,6 +982,14 @@ class HeartsAI:
                 best_card = card
 
         return best_card if best_card else max(valid_plays, key=lambda c: c.rank.value)
+
+    def _has_suit_control(self, hand: list[Card], suit: Suit) -> bool:
+        """Check if we have enough high cards in a suit to control it."""
+        w = self.weights
+        high_cards = [
+            c for c in hand if c.suit == suit and c.rank.value >= Rank.JACK.value
+        ]
+        return len(high_cards) >= w.control_card_count
 
 
 # Convenience functions for simpler integration

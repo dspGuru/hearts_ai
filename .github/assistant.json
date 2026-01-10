@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json.schemastore.org/ai-assistant.json",
+  "name": "Hearts AI",
+  "description": "A Hearts card game implementation with heuristic-based AI and reinforcement learning optimization",
+  "version": "1.0.0",
+  "language": "Python",
+  "pythonVersion": ">=3.14",
+
+  "overview": {
+    "purpose": "Complete Hearts card game with AI players using configurable heuristics optimized through PyTorch-based reinforcement learning",
+    "features": [
+      "4-player and 3-player game modes",
+      "60+ tunable AI heuristic weights",
+      "PyTorch-based weight optimization via self-play",
+      "Pygame GUI for interactive play",
+      "Comprehensive test suite with >95% coverage"
+    ],
+    "gameModes": {
+      "PLAYER_4": "Standard 4-player Hearts",
+      "PLAYER_3_REMOVE": "3-player mode, 2 of diamonds removed, 17 cards each",
+      "PLAYER_3_KITTY": "3-player mode, 1 card set aside as kitty"
+    }
+  },
+
+  "architecture": {
+    "tiers": [
+      {
+        "name": "User Interfaces",
+        "files": ["hearts_gui.py"],
+        "description": "Pygame GUI and CLI tools for interaction"
+      },
+      {
+        "name": "AI Layer",
+        "files": ["hearts_ai.py"],
+        "description": "HeartsAI and AIWeights classes for decision-making"
+      },
+      {
+        "name": "Game Engine",
+        "files": ["hearts_game.py"],
+        "description": "Core game rules, state management, scoring"
+      },
+      {
+        "name": "Training System",
+        "files": ["hearts_learn.py"],
+        "description": "PyTorch-based weight optimization"
+      },
+      {
+        "name": "Configuration",
+        "files": ["learned_weights.py", "improved_weights.py"],
+        "description": "Pre-trained weight configurations"
+      }
+    ]
+  },
+
+  "files": {
+    "hearts_game.py": {
+      "description": "Core game engine implementing Hearts rules",
+      "lines": 688,
+      "classes": {
+        "Card": "Frozen dataclass representing a playing card (suit + rank)",
+        "Suit": "Enum: CLUBS, DIAMONDS, SPADES, HEARTS",
+        "Rank": "Enum: TWO through ACE",
+        "Player": "Game participant with hand, score, passed cards",
+        "Trick": "Single trick tracking cards played and determining winner",
+        "HeartsGame": "Main orchestrator managing game flow and rules",
+        "GameMode": "Enum for game variants",
+        "GamePhase": "Enum: DEALING, PASSING, PLAYING, ROUND_END, GAME_OVER",
+        "PassDirection": "Enum: LEFT, RIGHT, ACROSS, NONE"
+      },
+      "keyMethods": [
+        "start_round() - Initialize new round",
+        "set_pass_cards() - Players select cards to pass",
+        "execute_pass() - Execute the passing phase",
+        "get_valid_plays() - Get legal moves for current player",
+        "play_card() - Play a card and update game state",
+        "get_scores() - Get current total scores",
+        "is_game_over() - Check if game reached 100 points"
+      ]
+    },
+    "hearts_ai.py": {
+      "description": "AI player with configurable heuristics",
+      "lines": 1057,
+      "classes": {
+        "AIWeights": "Dataclass with 60+ tunable parameters for AI behavior",
+        "CardTracker": "Tracks played cards, voids, passed cards, game history",
+        "HeartsAI": "Main AI player implementing decision algorithms"
+      },
+      "keyMethods": [
+        "select_pass_cards() - 8-step passing strategy algorithm",
+        "select_play() - Delegates to lead/follow/discard methods",
+        "_select_lead() - Strategy when leading a trick",
+        "_select_follow() - Strategy when following suit",
+        "_select_discard() - Strategy when unable to follow",
+        "_detect_moon_threat() - Detect opponent shooting the moon",
+        "_should_attempt_moon() - Evaluate hand for moon attempt"
+      ],
+      "weightCategories": {
+        "passing": "8 weights for card passing decisions",
+        "playing": "20+ weights for lead/follow/discard priorities",
+        "strategy": "15+ weights for moon, finesse, suit control",
+        "position": "Weights for 2nd-hand-low, 3rd-hand-high tactics"
+      }
+    },
+    "hearts_learn.py": {
+      "description": "PyTorch-based training system for weight optimization",
+      "lines": 593,
+      "classes": {
+        "LearnableWeights": "PyTorch nn.Module wrapping weights as learnable parameters",
+        "TrainingStats": "Dataclass tracking epoch metrics",
+        "HeartsTrainer": "Orchestrates training via Adam optimizer"
+      },
+      "keyMethods": [
+        "train_epoch() - Run games, compute rewards, update weights",
+        "train_until_convergence() - Train until weights stabilize",
+        "simulate_game() - Run complete game with given weights",
+        "compute_reward() - Score-based reward calculation"
+      ],
+      "trainingApproach": "REINFORCE-style policy gradient with noise perturbation"
+    },
+    "hearts_gui.py": {
+      "description": "Pygame-based graphical user interface",
+      "lines": 981,
+      "features": [
+        "Interactive human vs AI play",
+        "Watch mode with all AI players",
+        "Card rendering with suit symbols",
+        "Real-time score tracking",
+        "Pass card selection interface"
+      ]
+    },
+    "benchmark_ai.py": {
+      "description": "Tournament system comparing AI configurations",
+      "lines": 120,
+      "purpose": "Round-robin testing of improved vs baseline weights"
+    },
+    "verify_heuristics.py": {
+      "description": "Verification script for AI performance testing",
+      "lines": 80,
+      "purpose": "Simulate games and report statistics across game modes"
+    },
+    "learned_weights.py": {
+      "description": "Pre-trained optimized weights from training runs",
+      "lines": 84,
+      "content": "Weight dictionaries for all 3 game modes"
+    },
+    "improved_weights.py": {
+      "description": "Newer optimized weights with advanced strategies enabled",
+      "lines": 42
+    }
+  },
+
+  "tests": {
+    "directory": "tests/",
+    "framework": "pytest",
+    "coverageTarget": ">95%",
+    "files": {
+      "test_game.py": "Game engine tests (rules, scoring, phases)",
+      "test_ai.py": "AI behavior tests (passing, playing, tracking)",
+      "test_learn.py": "Training system tests (simulation, convergence)",
+      "test_advanced_strategies.py": "Advanced tactic tests (moon, finesse, bleeding)",
+      "conftest.py": "Pytest fixtures (game_4p, game_3p_remove, game_3p_kitty)"
+    },
+    "runCommand": "pytest tests/ -v --cov=hearts_ai --cov=hearts_game --cov=hearts_learn"
+  },
+
+  "dependencies": {
+    "numpy": ">=2.4.0",
+    "pycarddeck": ">=1.4.0",
+    "pygame-ce": ">=2.5.6",
+    "pytest": ">=9.0.2",
+    "pytest-cov": ">=7.0.0",
+    "torch": ">=2.9.1"
+  },
+
+  "patterns": {
+    "configurableHeuristics": "AIWeights dataclass with 60+ parameters for tuning behavior",
+    "strategyPattern": "select_play() delegates to specialized methods by position",
+    "stateTracking": "CardTracker maintains game history for informed decisions",
+    "factoryRegistry": "DEFAULT_WEIGHTS dictionary by GameMode for centralized management",
+    "pytorchOptimization": "LearnableWeights wraps weights as nn.Parameter with sigmoid bounds"
+  },
+
+  "keyAlgorithms": {
+    "passing": {
+      "steps": [
+        "1. Evaluate Queen of Spades danger",
+        "2. Find shortest suits to void",
+        "3. Identify high hearts to pass",
+        "4. Find dangerous high cards (A/K)",
+        "5. Strategic control of 2C/AC",
+        "6. Add decoy low cards",
+        "7. Penalize last card of suit",
+        "8. Fill remainder with highest cards"
+      ]
+    },
+    "leading": {
+      "factors": [
+        "Suit priority weights",
+        "Queen of Spades control (bleed/flush)",
+        "Avoid suits where opponents are void",
+        "Moon attempt detection"
+      ]
+    },
+    "following": {
+      "factors": [
+        "Win vs duck calculation",
+        "Position-based weights (2nd low, 3rd high)",
+        "Moon threat detection for blocking"
+      ]
+    },
+    "discarding": {
+      "priority": [
+        "1. Queen of Spades (highest)",
+        "2. Hearts",
+        "3. Dangerous spades (A/K when QS not played)",
+        "4. Other high cards by rank"
+      ]
+    }
+  },
+
+  "gameRules": {
+    "scoring": {
+      "hearts": "1 point each (13 total)",
+      "queenOfSpades": "13 points",
+      "shootingTheMoon": "Shooter gets 0, others get 26",
+      "gameEnd": "First player to reach 100 points"
+    },
+    "passing": {
+      "4player": "LEFT, RIGHT, ACROSS, NONE (repeats)",
+      "3player": "LEFT, RIGHT, NONE (repeats)"
+    },
+    "playRules": [
+      "Must follow suit if possible",
+      "First card must be 2 of clubs",
+      "Cannot lead hearts until broken",
+      "Cannot play points on first trick"
+    ]
+  },
+
+  "conventions": {
+    "codeStyle": {
+      "types": "Type hints used for key functions",
+      "dataStructures": "Dataclasses for data, Enums for fixed values",
+      "documentation": "Docstrings in classes and methods"
+    },
+    "naming": {
+      "files": "snake_case (hearts_game.py)",
+      "classes": "PascalCase (HeartsGame, AIWeights)",
+      "methods": "snake_case with leading underscore for private (_select_lead)",
+      "constants": "UPPER_SNAKE_CASE (DEFAULT_WEIGHTS)"
+    }
+  },
+
+  "commonTasks": {
+    "runGame": "python hearts_gui.py",
+    "runTests": "pytest tests/ -v",
+    "runWithCoverage": "pytest tests/ -v --cov=hearts_ai --cov=hearts_game --cov=hearts_learn",
+    "trainWeights": "python hearts_learn.py",
+    "benchmark": "python benchmark_ai.py",
+    "verify": "python verify_heuristics.py"
+  },
+
+  "hints": {
+    "modifyingAI": "Edit AIWeights dataclass in hearts_ai.py to add new heuristics",
+    "addingGameModes": "Extend GameMode enum and update HeartsGame logic",
+    "tuningWeights": "Run hearts_learn.py to optimize, results saved to learned_weights.py",
+    "testingChanges": "Always run pytest tests/ after modifications",
+    "debuggingAI": "Use CardTracker to inspect game state and void tracking"
+  }
+}
