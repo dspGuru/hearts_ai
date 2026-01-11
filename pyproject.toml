@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "numpy>=2.4.0",
+    "numpy>=1.22.0,<2.4",
     "pycarddeck>=1.4.0",
     "pygame-ce>=2.5.6",
     "pytest>=9.0.2",
@@ -36,4 +36,18 @@ exclude_lines = [
     "def __repr__",
     "if __name__ == .__main__.:",
     "raise NotImplementedError",
+]
+
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = [
+    "hearts_ai",
+    "hearts_game",
+    "hearts_gui",
+    "hearts_learn",
+    "main",
+    "test_weights",
 ]
